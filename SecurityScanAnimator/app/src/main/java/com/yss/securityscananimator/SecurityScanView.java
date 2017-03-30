@@ -263,8 +263,8 @@ public class SecurityScanView extends View {
         });
         final ValueAnimator mSpotAnim = ValueAnimator.ofFloat(mSpotRadius, 20);
         mSpotAnim.setInterpolator(new LinearInterpolator());
-        mSpotAnim.setDuration(1500);
-        mSpotAnim.setRepeatCount(2);
+        mSpotAnim.setDuration(2000);
+        mSpotAnim.setRepeatCount(1);
         mSpotAnim.addListener(new ValueAnimator.AnimatorListener(){
 
             @Override
@@ -302,8 +302,8 @@ public class SecurityScanView extends View {
         });
         final ValueAnimator mSpotColorAnim = ValueAnimator.ofInt(mSpotRadiusAlpha, 0);
         mSpotColorAnim.setInterpolator(new LinearInterpolator());
-        mSpotColorAnim.setDuration(1500);
-        mSpotColorAnim.setRepeatCount(2);
+        mSpotColorAnim.setDuration(2000);
+        mSpotColorAnim.setRepeatCount(1);
         mSpotColorAnim.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
 
             @Override
