@@ -11,9 +11,12 @@ import android.graphics.RadialGradient;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.Shader;
+import android.os.Build;
 import android.os.Handler;
+import android.support.annotation.RequiresApi;
 import android.util.AttributeSet;
 import android.util.Log;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.animation.LinearInterpolator;
 
@@ -32,30 +35,41 @@ public class SecurityScanView extends View {
     private Paint mResultArcPaint;//扫描结束后显示结果的百分比圆
     private Paint mTextPaint;//数字的画笔
     private Paint mUnitPaint;//单位的画笔
+    private Paint mButtonTextPaint;//点击按钮的text画笔
+    private Paint mButtonBgPaint;//点击按钮的背景画笔
+    private Paint mButtonBgFullPaint;//点击按钮的填充背景画笔
 
     private float mWidth;//view的宽
     private float mHeight;
     private float radius;//半径
     private float minArcRadius = 0f;//小圆半径
     private float mSectorRadius = 0f;//四分之一扫描扇形半径
-    private float mSectorAngle=-90f;//四分之一扫描扇形半径的开始的角度
-    private float mSpotRadius=0;//点的半径
-    private int mSpotRadiusAlpha=150;//点的透明度
-    private int   mSpotNum;//当前点的个数
+    private float mSectorAngle = -90f;//四分之一扫描扇形半径的开始的角度
+    private float mSpotRadius = 0;//点的半径
+    private int mSpotRadiusAlpha = 150;//点的透明度
+    private int mSpotNum;//当前点的个数
 
-    private List<Spot> mSpotLists=new ArrayList<>();
-    private boolean mIsScanEnd =false;//是否扫描结束
-    private float mArcSpac =40f ;//扫描后 两个圆的间距
+    private List<Spot> mSpotLists = new ArrayList<>();
+    private boolean mIsScanEnd = false;//是否扫描结束
+    private float mArcSpac = 40f;//扫描后 两个圆的间距
     private float mWidthRadius;//扫描结束后内环圆的角度
     private float mPercentageRadius;//扫描结束后显示的结果百分比角度
     private boolean mIsWidthRadiusAminEnd = false;//扫描结束后内环圆是否画完
-    private boolean mIsAminEnd = false ;//所有的动画是否结束
+    private boolean mIsAminEnd = false;//所有的动画是否结束
 
     private int mPercentageAngle = 120;//扫描结果的分数所占度角
-    private int mPercentage = 100 ;//扫描结果的分数
+    private int mPercentage = 100;//扫描结果的分数
 
     //中间圆的动画只有一次
     private boolean isFirstArcAmin = false;
+    private boolean mIsTouchDown = false;
+
+    private float mTouchLeft;//可点击区域的坐标
+    private float mTouchTop;
+    private float mTouchRight;
+    private float mTouchBottom;
+    private OnClickListenter mOnClickListenter;
+
 
 
 
@@ -84,6 +98,8 @@ public class SecurityScanView extends View {
         setMeasuredDimension(len, len);
 
     }
+
+    @RequiresApi(api = Build.VERSION_CODES.LOLLIPOP)
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
@@ -95,15 +111,17 @@ public class SecurityScanView extends View {
         //外层圆
         canvas.drawCircle(0, 0, radius, mArcPaint);
         //
-        if(!mIsScanEnd){
+        if (!mIsScanEnd) {
             //画扫描之前的内容
             drawScanStar(canvas);
-        }else {
+            //中间的文本
+            drawText(canvas);
+        } else {
             //画扫描之后的内容
             drawScanEnd(canvas);
+            drawTextButton(canvas);
         }
-        //中间的文本
-        drawText(canvas);
+
 
         //动画只开启一次
         if (!isFirstArcAmin) {
@@ -114,14 +132,77 @@ public class SecurityScanView extends View {
 
     }
 
-   //启动handler，实现4秒定时循环执行
-    private Handler handler = new Handler(){
+    @RequiresApi(api = Build.VERSION_CODES.LOLLIPOP)
+    private void drawTextButton(Canvas canvas) {
+        Rect bounds = new Rect();
+        mTextPaint.getTextBounds(mPercentage + "", 0, (mPercentage + "").length(), bounds);
+        Rect unitBounds = new Rect();
+        mUnitPaint.getTextBounds("分", 0, ("分").length(), unitBounds);
+        Rect buttonBounds = new Rect();
+        mButtonTextPaint.getTextBounds("立即修复", 0, ("立即修复").length(), buttonBounds);
+        canvas.drawText(mPercentage + "", 0, (bounds.height() + buttonBounds.height()) / 2 - buttonBounds.height() - 40, mTextPaint);
+        canvas.drawText("分", bounds.width() / 2 + unitBounds.width() * 2, -bounds.height() / 2 + unitBounds.height() - buttonBounds.height() / 2 - 30, mUnitPaint);
+        canvas.drawText("立即修复", 0, (bounds.height() + buttonBounds.height()) / 2 + buttonBounds.height() / 2 + 20, mButtonTextPaint);
+        if (mIsTouchDown) {
+            canvas.drawRoundRect(-buttonBounds.width() / 2 - 30, (bounds.height() + buttonBounds.height() + 10) / 2 + 10 - buttonBounds.height(),
+                    buttonBounds.width() / 2 + 30, (bounds.height() + buttonBounds.height() + 20) / 2 + buttonBounds.height() + 20, 60, 60, mButtonBgFullPaint);
+        }
+        canvas.drawRoundRect(-buttonBounds.width() / 2 - 30, (bounds.height() + buttonBounds.height() + 10) / 2 + 10 - buttonBounds.height(),
+                buttonBounds.width() / 2 + 30, (bounds.height() + buttonBounds.height() + 20) / 2 + buttonBounds.height() + 20, 60, 60, mButtonBgPaint);
+        mTouchLeft = -buttonBounds.width() / 2 - 30;
+        mTouchTop = (bounds.height() + buttonBounds.height() + 10) / 2 + 10 - buttonBounds.height();
+        mTouchRight = buttonBounds.width() / 2 + 30;
+        mTouchBottom = (bounds.height() + buttonBounds.height() + 20) / 2 + buttonBounds.height() + 20;
+    }
+
+    @Override
+    public boolean onTouchEvent(MotionEvent event) {
+        switch (event.getAction()) {
+            case MotionEvent.ACTION_MOVE:
+            case MotionEvent.ACTION_DOWN:
+                //获取屏幕上点击的坐标
+                float x = event.getX();
+                float y = event.getY();
+                x = x - getWidth() / 2;
+                y = y - getHeight() / 2;
+                //如果坐标在我们的文字区域内，则将点击的文字改颜色
+                if (mIsScanEnd) {//扫描结束立即修复按钮出现
+                    if (x > mTouchLeft && x < mTouchRight && y > mTouchTop && y < mTouchBottom) {
+
+                        //点击到可点击的区域
+                        mIsTouchDown = true;
+                        invalidate();
+                        return true;
+                    }
+
+                }
+                break;
+            case MotionEvent.ACTION_UP:
+
+                //点击抬起后，
+                if (mIsTouchDown) {
+
+                    mIsTouchDown = false;
+                    invalidate();
+                    mOnClickListenter.onClick();
+                }
+
+                return true;
+        }
+        return super.onTouchEvent(event);
+    }
+    //注册监听
+    public void setOnClickListenter(OnClickListenter mOnClickListenter) {
+        this.mOnClickListenter = mOnClickListenter;
+    }
+    //启动handler，实现4秒定时循环执行
+    private Handler handler = new Handler() {
         public void handleMessage(android.os.Message msg) {
 
-            if(!mIsAminEnd){
+            if (!mIsAminEnd) {
                 //逻辑处理
                 postInvalidate();
-                handler.sendEmptyMessageDelayed(0,10);//15毫秒后再次执行
+                handler.sendEmptyMessageDelayed(0, 10);//15毫秒后再次执行
             }
         }
     };
@@ -167,20 +248,44 @@ public class SecurityScanView extends View {
         mTextPaint.setStrokeWidth(20f);
         mTextPaint.setTextSize(200);
         mTextPaint.setColor(0xCCffffff);
-        mResultArcPaint.setAlpha(150);
+        mTextPaint.setAlpha(200);
         mTextPaint.setTextAlign(Paint.Align.CENTER);
+
 
         mUnitPaint = new Paint();
         mUnitPaint.setStrokeWidth(20f);
         mUnitPaint.setTextSize(40);
         mUnitPaint.setColor(0xCCffffff);
-        mResultArcPaint.setAlpha(150);
+        mUnitPaint.setAlpha(200);
         mUnitPaint.setTextAlign(Paint.Align.RIGHT);
+
+
+        mButtonBgPaint = new Paint();
+        mButtonBgPaint.setColor(Color.WHITE);
+        mButtonBgPaint.setStrokeWidth(4f);
+        mButtonBgPaint.setStyle(Paint.Style.STROKE);
+        mButtonBgPaint.setAntiAlias(true);
+        mButtonBgPaint.setAlpha(100);
+
+        mButtonBgFullPaint = new Paint();
+        mButtonBgFullPaint.setColor(Color.WHITE);
+        mButtonBgFullPaint.setStrokeWidth(4f);
+        mButtonBgFullPaint.setStyle(Paint.Style.FILL);
+        mButtonBgFullPaint.setAntiAlias(true);
+        mButtonBgFullPaint.setAlpha(50);
+
+        mButtonTextPaint = new Paint();
+        mButtonTextPaint.setStrokeWidth(20f);
+        mButtonTextPaint.setTextSize(40);
+        mButtonTextPaint.setColor(0xCCffffff);
+        mButtonTextPaint.setAlpha(200);
+        mButtonTextPaint.setTextAlign(Paint.Align.CENTER);
+
 
     }
 
 
-    private void drawScanStar(Canvas canvas){
+    private void drawScanStar(Canvas canvas) {
         canvas.drawLine(-radius, 0f, radius, 0f, mArcPaint);
         canvas.drawLine(0f, -radius, 0f, radius, mArcPaint);
         if (minArcRadius != 0) {
@@ -188,25 +293,26 @@ public class SecurityScanView extends View {
         }
         if (mSectorRadius != 0) {
             Shader mShader = new RadialGradient(0, 0, mSectorRadius,
-                    new int[] {  Color.TRANSPARENT,Color.TRANSPARENT, 0x66ffffff}, null, Shader.TileMode.REPEAT); // 一个材质,打造出一个线性梯度沿著一条线。
+                    new int[]{Color.TRANSPARENT, Color.TRANSPARENT, 0x66ffffff}, null, Shader.TileMode.REPEAT); // 一个材质,打造出一个线性梯度沿著一条线。
             mSectorPaint.setShader(mShader);
-            RectF oval2 = new RectF(-mSectorRadius, -mSectorRadius, mSectorRadius,mSectorRadius);// 设置个新的长方形，扫描测量
+            RectF oval2 = new RectF(-mSectorRadius, -mSectorRadius, mSectorRadius, mSectorRadius);// 设置个新的长方形，扫描测量
             canvas.drawArc(oval2, mSectorAngle, 90, true, mSectorPaint);
 
         }
-        for (int i=0;i<mSpotLists.size();i++){
+        for (int i = 0; i < mSpotLists.size(); i++) {
             mSpotPaint.setAlpha(mSpotLists.get(i).getSpotAlpha(mSpotRadiusAlpha));
-            canvas.drawCircle(mSpotLists.get(i).getX(),mSpotLists.get(i).getY(),mSpotLists.get(i).getSpotRadius(mSpotRadius),mSpotPaint);
+            canvas.drawCircle(mSpotLists.get(i).getX(), mSpotLists.get(i).getY(), mSpotLists.get(i).getSpotRadius(mSpotRadius), mSpotPaint);
         }
     }
-    private void drawScanEnd(Canvas canvas){
-        RectF oval2 = new RectF(-radius+mArcSpac, -radius+mArcSpac, radius-mArcSpac,radius-mArcSpac);
+
+    private void drawScanEnd(Canvas canvas) {
+        RectF oval2 = new RectF(-radius + mArcSpac, -radius + mArcSpac, radius - mArcSpac, radius - mArcSpac);
         // 设置个新的长方形，扫描测量
-        if(!mIsWidthRadiusAminEnd){
+        if (!mIsWidthRadiusAminEnd) {
             canvas.drawArc(oval2, -90, mWidthRadius, false, mWideArcPaint);
 
-        }else {
-            canvas.drawCircle(0, 0, radius-mArcSpac, mWideArcPaint);
+        } else {
+            canvas.drawCircle(0, 0, radius - mArcSpac, mWideArcPaint);
 //
 ////                int colorSweep[] = {0x80ffffff, 0x66ffffff };
 //                int colorSweep[] = {Color.WHITE, 0x66ffffff };
@@ -223,14 +329,13 @@ public class SecurityScanView extends View {
     }
 
 
-    private void drawText(Canvas canvas){
+    private void drawText(Canvas canvas) {
         Rect bounds = new Rect();
-        mTextPaint.getTextBounds(mPercentage+"", 0, (mPercentage+"").length(), bounds);
-        canvas.drawText(mPercentage+"",0,bounds.height()/2,mTextPaint);
+        mTextPaint.getTextBounds(mPercentage + "", 0, (mPercentage + "").length(), bounds);
+        canvas.drawText(mPercentage + "", 0, bounds.height() / 2, mTextPaint);
         Rect unitBounds = new Rect();
         mUnitPaint.getTextBounds("分", 0, ("分").length(), unitBounds);
-        canvas.drawText(mPercentage+"",0,bounds.height()/2,mTextPaint);
-        canvas.drawText("分",bounds.width()/2 +unitBounds.width()*2,-bounds.height()/2 +unitBounds.height(),mUnitPaint);
+        canvas.drawText("分", bounds.width() / 2 + unitBounds.width() * 2, -bounds.height() / 2 + unitBounds.height(), mUnitPaint);
     }
 
     public int measureDimension(int defaultSize, int measureSpec) {
@@ -253,11 +358,13 @@ public class SecurityScanView extends View {
         starSectorAndArcAnim();
 
     }
-    public void setmPercentage(int percentage){
+    //设置百分比占的角度
+    public void setmPercentage(int percentage) {
         this.mPercentageAngle = percentage;
     }
+
     //中间圆的从小变大的动画 四分之一扇形由小变大的动画 两个动画同时进行
-    private  void starSectorAndArcAnim(){
+    private void starSectorAndArcAnim() {
         float endRadius = radius / 3 * 2;
         ValueAnimator mMinArcAnim = ValueAnimator.ofFloat(minArcRadius, endRadius);
         mMinArcAnim.setInterpolator(new LinearInterpolator());
@@ -280,7 +387,7 @@ public class SecurityScanView extends View {
                 mSectorRadius = (float) valueAnimator.getAnimatedValue();
             }
         });
-        mSectorAnim.addListener(new ValueAnimator.AnimatorListener(){
+        mSectorAnim.addListener(new ValueAnimator.AnimatorListener() {
 
             @Override
             public void onAnimationStart(Animator animation) {
@@ -303,22 +410,23 @@ public class SecurityScanView extends View {
 
             @Override
             public void onAnimationRepeat(Animator animation) {
-                mIsWidthRadiusAminEnd =true;
+                mIsWidthRadiusAminEnd = true;
             }
         });
 
-        AnimatorSet  animatorSet =new AnimatorSet();
+        AnimatorSet animatorSet = new AnimatorSet();
         animatorSet.play(mSectorAnim).with(mMinArcAnim);
         animatorSet.setDuration(400);
         animatorSet.start();
     }
+
     //小点的变大 颜色渐变动画
-    private void starSpotAnim(){
+    private void starSpotAnim() {
         final ValueAnimator mSpotAnim = ValueAnimator.ofFloat(mSpotRadius, 20);
         mSpotAnim.setInterpolator(new LinearInterpolator());
         mSpotAnim.setDuration(2000);
         mSpotAnim.setRepeatCount(1);
-        mSpotAnim.addListener(new ValueAnimator.AnimatorListener(){
+        mSpotAnim.addListener(new ValueAnimator.AnimatorListener() {
 
             @Override
             public void onAnimationStart(Animator animation) {
@@ -364,18 +472,19 @@ public class SecurityScanView extends View {
 
             }
         });
-        AnimatorSet animatorSet =new AnimatorSet();
+        AnimatorSet animatorSet = new AnimatorSet();
         animatorSet.setDuration(2000);
         animatorSet.play(mSpotAnim).with(mSpotColorAnim);
         animatorSet.start();
     }
+
     //四分之一扇形旋转的动画
-    private void starSectorTurnAnim(){
+    private void starSectorTurnAnim() {
         final ValueAnimator mSectorTurnAnim = ValueAnimator.ofFloat(mSectorAngle, 270);
         mSectorTurnAnim.setInterpolator(new LinearInterpolator());
         mSectorTurnAnim.setDuration(1000);
         mSectorTurnAnim.setRepeatCount(3);
-        mSectorTurnAnim.addListener(new ValueAnimator.AnimatorListener(){
+        mSectorTurnAnim.addListener(new ValueAnimator.AnimatorListener() {
 
             @Override
             public void onAnimationStart(Animator animation) {
@@ -413,9 +522,9 @@ public class SecurityScanView extends View {
     }
 
     //数字变化的动画
-    private void starTextAmin(){
-        final int num =100-mPercentageAngle*100/360;
-        Log.e("num:",num+"");
+    private void starTextAmin() {
+        final int num = 100 - mPercentageAngle * 100 / 360;
+        Log.e("num:", num + "");
         ValueAnimator mMinArcAnim = ValueAnimator.ofInt(mPercentage, num);
         mMinArcAnim.setInterpolator(new LinearInterpolator());
         mMinArcAnim.setDuration(5000);
@@ -424,9 +533,9 @@ public class SecurityScanView extends View {
             @Override
             public void onAnimationUpdate(ValueAnimator valueAnimator) {
 
-                int percentage =(Integer) valueAnimator.getAnimatedValue();
-                if(percentage == num || percentage%4 == 0){
-                    mPercentage= percentage;
+                int percentage = (Integer) valueAnimator.getAnimatedValue();
+                if (percentage == num || percentage % 4 == 0) {
+                    mPercentage = percentage;
 
                 }
 
@@ -435,12 +544,13 @@ public class SecurityScanView extends View {
         mMinArcAnim.start();
 
     }
-//扫描结束后的动画
-    private void starResultAnim(){
+
+    //扫描结束后的动画
+    private void starResultAnim() {
         final ValueAnimator percentRadiusAnim = ValueAnimator.ofFloat(mPercentageRadius, mPercentageAngle);
         percentRadiusAnim.setInterpolator(new LinearInterpolator());
         percentRadiusAnim.setDuration(1000);
-        percentRadiusAnim.addListener(new ValueAnimator.AnimatorListener(){
+        percentRadiusAnim.addListener(new ValueAnimator.AnimatorListener() {
 
             @Override
             public void onAnimationStart(Animator animation) {
@@ -486,7 +596,7 @@ public class SecurityScanView extends View {
 
             }
         });
-        widthRadiusAnim.addListener(new ValueAnimator.AnimatorListener(){
+        widthRadiusAnim.addListener(new ValueAnimator.AnimatorListener() {
 
             @Override
             public void onAnimationStart(Animator animation) {
@@ -512,106 +622,112 @@ public class SecurityScanView extends View {
         widthRadiusAnim.start();
 
 
-
     }
-    private void randomSpotCoodrnate(){
-         mSpotNum =(int)(Math.random()*10f)+5;
-        for (int i=0;i<mSpotNum;i++){
-            Spot spot=new Spot(radius);
+
+    private void randomSpotCoodrnate() {
+        mSpotNum = (int) (Math.random() * 10f) + 5;
+        for (int i = 0; i < mSpotNum; i++) {
+            Spot spot = new Spot(radius);
             mSpotLists.add(spot);
         }
     }
 
 
     //画短刻度
-    private void drawShortScaleLine(Canvas canvas){
+    private void drawShortScaleLine(Canvas canvas) {
         float length = 20f;
-        canvas.drawLine(radius - 80 ,0,radius-60,0,mArcPaint);
+        canvas.drawLine(radius - 80, 0, radius - 60, 0, mArcPaint);
 
-        if(mWidthRadius >= 270){
-            canvas.drawLine(0,-radius + 80 ,0,-radius+60,mArcPaint);
-            canvas.drawLine(radius - 80 ,0,radius-60,0,mArcPaint);
-            canvas.drawLine(0,radius - 80 ,0,radius-60,mArcPaint);
-            canvas.drawLine(-radius + 80 ,0,-radius+60,0,mArcPaint);
+        if (mWidthRadius >= 270) {
+            canvas.drawLine(0, -radius + 80, 0, -radius + 60, mArcPaint);
+            canvas.drawLine(radius - 80, 0, radius - 60, 0, mArcPaint);
+            canvas.drawLine(0, radius - 80, 0, radius - 60, mArcPaint);
+            canvas.drawLine(-radius + 80, 0, -radius + 60, 0, mArcPaint);
 
-        }else if(mWidthRadius >=180){
-            canvas.drawLine(0,-radius + 80 ,0,-radius+60,mArcPaint);
-            canvas.drawLine(radius - 80 ,0,radius-60,0,mArcPaint);
-            canvas.drawLine(0,radius - 80 ,0,radius-60,mArcPaint);
+        } else if (mWidthRadius >= 180) {
+            canvas.drawLine(0, -radius + 80, 0, -radius + 60, mArcPaint);
+            canvas.drawLine(radius - 80, 0, radius - 60, 0, mArcPaint);
+            canvas.drawLine(0, radius - 80, 0, radius - 60, mArcPaint);
 
-        }else if(mWidthRadius >=90){
-            canvas.drawLine(0,-radius + 80 ,0,-radius+60,mArcPaint);
-            canvas.drawLine(radius - 80 ,0,radius-60,0,mArcPaint);
+        } else if (mWidthRadius >= 90) {
+            canvas.drawLine(0, -radius + 80, 0, -radius + 60, mArcPaint);
+            canvas.drawLine(radius - 80, 0, radius - 60, 0, mArcPaint);
 
-        }else {
-            canvas.drawLine(0,-radius + 80 ,0,-radius+60,mArcPaint);
+        } else {
+            canvas.drawLine(0, -radius + 80, 0, -radius + 60, mArcPaint);
 
         }
 
     }
 
-    class Spot{
+    class Spot {
         //点的位置 圆内的点
         // 半径  最大半径 20 15 10
-         //透明度 起始透明度 200 150 100
+        //透明度 起始透明度 200 150 100
         int x;
         int y;
-        private int[] mMaxRadius={20 ,15 ,10 };
-        private int[] mStartAlpha={200 ,150 ,100};
+        private int[] mMaxRadius = {20, 15, 10};
+        private int[] mStartAlpha = {200, 150, 100};
         private int mRadius;
 
         private float pi = 3.1415926f;
         private int mAlpha;
-        public Spot(float radius){
+
+        public Spot(float radius) {
 
             randomXY(radius);
             setSpotPaintAlpha();
             setSpotRadius();
 
         }
-        private void randomXY(float radius){
+
+        private void randomXY(float radius) {
             //随机半径50 - 100范围内
-            int r= (int)(Math.random()*(radius - 20)+10);
-            int angle = (int)(Math.random()*360);
-            this.x =(int)( Math.sin(  angle * pi / 180  ) * r);
-            this.y = (int)(Math.cos(  angle * pi / 180) * r);
+            int r = (int) (Math.random() * (radius - 20) + 10);
+            int angle = (int) (Math.random() * 360);
+            this.x = (int) (Math.sin(angle * pi / 180) * r);
+            this.y = (int) (Math.cos(angle * pi / 180) * r);
         }
 
         public int getY() {
             return y;
         }
+
         public int getX() {
             return x;
         }
 
 
-
-
-        private void  setSpotPaintAlpha() {
-            this.mAlpha = mStartAlpha[(int)(Math.random()*3)];
+        private void setSpotPaintAlpha() {
+            this.mAlpha = mStartAlpha[(int) (Math.random() * 3)];
         }
 
 
+        private void setSpotRadius() {
 
-        private void  setSpotRadius() {
-
-            this.mRadius = mMaxRadius[(int)(Math.random()*3)];
+            this.mRadius = mMaxRadius[(int) (Math.random() * 3)];
         }
-        public float getSpotRadius(float spotRadius){
-            if(spotRadius<mRadius){
+
+        public float getSpotRadius(float spotRadius) {
+            if (spotRadius < mRadius) {
                 return spotRadius;
-            }else {
+            } else {
                 return mRadius;
             }
 
         }
-        public int getSpotAlpha(int spotAlpha){
-            if(spotAlpha<mAlpha){
+
+        public int getSpotAlpha(int spotAlpha) {
+            if (spotAlpha < mAlpha) {
                 return spotAlpha;
-            }else {
+            } else {
                 return mAlpha;
             }
 
         }
+    }
+
+    interface OnClickListenter {
+        void onClick();
     }
 }
